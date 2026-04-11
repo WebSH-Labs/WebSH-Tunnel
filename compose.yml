@@ -1,0 +1,20 @@
+services:
+    websh-tunnel:
+        container_name: websh-tunnel
+        image: ghcr.io/websh-labs/websh-tunnel:latest
+        restart: unless-stopped
+        env_file:
+            - .env
+        ports:
+            - '5152:5152'
+        environment:
+            - TUNNEL_SECRET=${TUNNEL_SECRET}
+        healthcheck:
+            test: ['CMD', 'curl', '-f', 'http://localhost:5152/health']
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 5s
+networks:
+    default:
+        driver: bridge
