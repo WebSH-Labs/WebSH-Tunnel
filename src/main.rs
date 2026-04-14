@@ -19,7 +19,6 @@ use tokio::{
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const IO_TIMEOUT: Duration = Duration::from_secs(60 * 30);
-const BIND_ADDR: &str = "0.0.0.0:5152";
 
 #[derive(Debug, Deserialize)]
 struct TunnelQuery {
@@ -32,12 +31,14 @@ struct TunnelQuery {
 async fn main() {
     dotenvy::dotenv().ok();
     let secret = std::env::var("TUNNEL_SECRET").expect("TUNNEL_SECRET must be set");
+    let bind_addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:5152".to_string());
 
     let app = Router::new()
         .route("/tunnel", get(tunnel_handler))
+        .route("/health", get(|| async { StatusCode::OK }))
         .with_state(secret);
 
-    let addr: SocketAddr = BIND_ADDR.parse().unwrap();
+    let addr: SocketAddr = bind_addr.parse().expect("invalid BIND_ADDR");
     println!("[INFO] tunnel node starting on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
