@@ -9,7 +9,7 @@ use axum::{
     routing::get,
 };
 use futures_util::{SinkExt, StreamExt};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -27,11 +27,30 @@ struct TunnelQuery {
     secret: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HeartbeatPayload {
+    name: String,
+    secret: String,
+}
+
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
     let secret = std::env::var("TUNNEL_SECRET").expect("TUNNEL_SECRET must be set");
     let bind_addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:5152".to_string());
+
+    let backend_url = std::env::var("BACKEND_URL").ok();
+    let node_name = std::env::var("NODE_NAME").ok();
+
+    if let (Some(url), Some(name)) = (backend_url, node_name) {
+        let secret_clone = secret.clone();
+        tokio::spawn(async move {
+            heartbeat_loop(url, name, secret_clone).await;
+        });
+    } else {
+        println!("[WARN] BACKEND_URL or NODE_NAME not set, heartbeats disabled");
+    }
 
     let app = Router::new()
         .route("/tunnel", get(tunnel_handler))
@@ -43,6 +62,32 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
+}
+
+async fn heartbeat_loop(backend_url: String, node_name: String, secret: String) {
+    let client = reqwest::Client::new();
+    let url = format!("{}/nodes/heartbeat", backend_url.trim_end_matches('/'));
+    let payload = HeartbeatPayload {
+        name: node_name,
+        secret,
+    };
+
+    println!("[INFO] starting heartbeat loop to {}", url);
+
+    loop {
+        match client.post(&url).json(&payload).send().await {
+            Ok(res) if res.status().is_success() => {
+                // println!("[INFO] heartbeat sent");
+            }
+            Ok(res) => {
+                eprintln!("[WARN] heartbeat failed: status={}", res.status());
+            }
+            Err(e) => {
+                eprintln!("[WARN] heartbeat failed: {}", e);
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(30)).await;
+    }
 }
 
 async fn tunnel_handler(
