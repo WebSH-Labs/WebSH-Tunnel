@@ -18,7 +18,7 @@ use tokio::{
 };
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-const IO_TIMEOUT: Duration = Duration::from_secs(60 * 30);
+const IO_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Debug, Deserialize)]
 struct TunnelQuery {
@@ -58,7 +58,7 @@ async fn main() {
         .with_state(secret);
 
     let addr: SocketAddr = bind_addr.parse().expect("invalid BIND_ADDR");
-    println!("[INFO] tunnel node starting on {}", addr);
+    println!("[INFO] tunnel node starting on {addr}");
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
@@ -125,7 +125,7 @@ async fn handle_tunnel(socket: WebSocket, query: TunnelQuery) {
         let mut buf = vec![0u8; 16 * 1024];
         loop {
             match timeout(IO_TIMEOUT, tcp_read.read(&mut buf)).await {
-                Ok(Ok(0)) | Ok(Err(_)) | Err(_) => break,
+                Ok(Ok(0) | Err(_)) | Err(_) => break,
                 Ok(Ok(n)) => {
                     if ws_write
                         .send(Message::Binary(buf[..n].to_vec().into()))
@@ -147,9 +147,8 @@ async fn handle_tunnel(socket: WebSocket, query: TunnelQuery) {
                         break;
                     }
                 }
-                Ok(Some(Ok(Message::Close(_)))) | Ok(None) => break,
+                Ok(Some(Ok(Message::Close(_)))) | Ok(None) | Ok(Some(Err(_))) | Err(_) => break,
                 Ok(Some(Ok(_))) => {}
-                Ok(Some(Err(_))) | Err(_) => break,
             }
         }
     });
